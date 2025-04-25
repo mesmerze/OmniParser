@@ -16,7 +16,7 @@ terraform {
   }
   backend "gcs" {
     bucket = "tf-omniparser-jepfdfdc859xft11"
-    prefix = "n8n"
+    prefix = "omniparser"
   }
 }
 
