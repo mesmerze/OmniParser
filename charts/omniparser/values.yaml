@@ -1,0 +1,34 @@
+namespace: omniparser
+
+replicaCount: 1
+
+image:
+  repository: eu.gcr.io/oi-tset/omniparser
+  tag: "3.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  limits:
+    nvidia.com/gpu: "1"
+  # requests:
+  #   nvidia.com/gpu: "1"
+
+nodeSelector:
+  cloud.google.com/gke-gpu: "true"
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: present
+    effect: NoSchedule
+  - key: ollama
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
