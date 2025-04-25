@@ -1,4 +1,4 @@
-locals {  
+locals {
   labels = {
     "environment" = "prod"
     "owner"       = "sip-team"
