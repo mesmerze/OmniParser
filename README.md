@@ -75,3 +75,16 @@ If you find our work useful, please consider citing our work:
       url={https://arxiv.org/abs/2408.00203}, 
 }
 ```
+## Installation
+
+1. Apply terraform resources:
+
+    ```bash
+    terraform -chdir=terraform apply
+    ```
+
+2. Apply Helmfile:
+
+    ```bash
+    helmfile -e production apply
+    ```
