@@ -1,4 +1,4 @@
-#Create a DNS record in Cloudflare Ollama endpoints
+#Create a DNS record in Cloudflare Omniparser endpoints
 resource "cloudflare_record" "record" {
   for_each = toset(local.dns_records)
   zone_id  = data.cloudflare_zone.name.id

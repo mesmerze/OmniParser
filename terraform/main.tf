@@ -2,7 +2,7 @@ locals {
   labels = {
     "environment" = "prod"
     "owner"       = "sip-team"
-    "repository"  = "n8n"
+    "repository"  = "omniparser"
   }
   dns_records = [
     var.host_name,
