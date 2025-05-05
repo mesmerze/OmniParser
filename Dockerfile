@@ -6,18 +6,20 @@ COPY --from=nvidia /usr/local /usr/local
 
 WORKDIR /OmniParser
 
-COPY . .
+COPY requirements.txt requirements.txt
 
-RUN apt-get update && apt-get install libgl1 -y
-
-RUN pip install -r requirements.txt
-
-RUN rm -rf weights/icon_detect weights/icon_caption weights/icon_caption_florence
-
-RUN for folder in icon_caption icon_detect; do \
+RUN apt-get update && apt-get install libgl1 -y && apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    # Install dependencies
+    pip install -r requirements.txt --no-cache-dir && \
+    # Cleanup
+    rm -rf weights/icon_detect weights/icon_caption weights/icon_caption_florence && \
+    # Download the models from Hugging Face
+    for folder in icon_caption icon_detect; do \
     huggingface-cli download microsoft/OmniParser-v2.0 --local-dir weights --repo-type model --include "$folder/*"; \
     done && \
     mv weights/icon_caption weights/icon_caption_florence
+    
+COPY . .
 
 EXPOSE 8000
 

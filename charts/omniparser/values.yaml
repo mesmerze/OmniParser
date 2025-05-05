@@ -4,7 +4,7 @@ replicaCount: 1
 
 image:
   repository: eu.gcr.io/oi-tset/omniparser
-  tag: "3.0"
+  tag: "4.0"
   pullPolicy: IfNotPresent
 
 service:
