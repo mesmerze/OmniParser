@@ -18,9 +18,7 @@ templates:
 
 releases:
   - name: omniparser    
-    chart: ./charts/omniparser 
-    values:
-      - values.yaml 
+    chart: ./charts/omniparser     
     inherit:
       - template: default  
 
