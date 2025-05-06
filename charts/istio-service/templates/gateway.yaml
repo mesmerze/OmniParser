@@ -1,0 +1,26 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  selector:
+    istio: ingress
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP2
+    hosts:
+    - {{ .Values.host }}.{{ .Values.domain }}
+    tls:
+      httpsRedirect: true # sends 301 redirect for http requests
+  - port:
+      number: 443
+      name: https-443
+      protocol: HTTPS
+    hosts:
+    - {{ .Values.host }}.{{ .Values.domain }}
+    tls:
+      mode: SIMPLE # enables HTTPS on this port
+      credentialName: {{ .Values.tlsSecretName }} # Secret should be in istio-system namespace
+      minProtocolVersion: TLSV1_2

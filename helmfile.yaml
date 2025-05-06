@@ -1,0 +1,33 @@
+# helmfile.yaml
+
+helmDefaults:  
+  timeout: 300
+  wait: true
+
+bases:
+  - git::ssh://git@github.com/test-IO/helm.git@environments/environments.yaml?ref=master  
+
+templates:
+  default:
+    missingFileHandler: Warn
+    namespace: omniparser
+    labels:
+      name: '{{`{{ .Release.Name }}`}}'
+    values:      
+      - environments/{{ .Environment.Name }}/{{`{{ .Release.Name }}`}}.yaml.gotmpl
+
+releases:
+  - name: omniparser    
+    chart: ./charts/omniparser     
+    inherit:
+      - template: default  
+
+  - name: istio-service
+    chart: ./charts/istio-service
+    # Do not install chart for default environments
+    installed: {{ ne .Environment.Name "default" | toYaml }}
+    wait: true
+    needs:
+      - omniparser
+    inherit:
+      - template: default     

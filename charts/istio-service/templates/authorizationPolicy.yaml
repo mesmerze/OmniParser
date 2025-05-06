@@ -1,0 +1,31 @@
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: omniparser
+  namespace: istio-system
+spec:
+  action: DENY
+  rules:
+  - from:
+    - source:
+        notIpBlocks:
+        - "35.207.91.15"    # TestIO VPN
+        # EPAM VPN. See https://kb.epam.com/display/EPMGNS/External+IPs+for+EPAM+VPN+gateways if you want to update it.
+        - "86.57.255.94"    # EPAM VPN
+        - "213.184.231.20"  # EPAM VPN
+        - "202.65.196.242"  # EPAM VPN
+        - "195.56.119.209"  # EPAM VPN
+        - "195.56.119.212"  # EPAM VPN
+        - "204.153.55.4"    # EPAM VPN
+        - "203.170.48.2"    # EPAM VPN
+        - "85.223.209.18"   # EPAM VPN
+        - "174.128.60.160"  # EPAM VPN
+        - "174.128.60.162"  # EPAM VPN
+        - "167.99.45.214"   # Executor server on hatchbox
+    to:
+    - operation:
+        hosts: ["{{ .Values.host }}.{{ .Values.domain }}"]
+  selector:
+    matchLabels:
+      istio: ingress

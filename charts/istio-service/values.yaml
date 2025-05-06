@@ -1,0 +1,3 @@
+host: demo
+domain: example.com
+tlsSecretName: tls-secret
