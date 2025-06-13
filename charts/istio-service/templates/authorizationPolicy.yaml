@@ -23,6 +23,7 @@ spec:
         - "174.128.60.160"  # EPAM VPN
         - "174.128.60.162"  # EPAM VPN
         - "167.99.45.214"   # Executor server on hatchbox
+        - "206.81.29.76"    # Testinator-topaz
     to:
     - operation:
         hosts: ["{{ .Values.host }}.{{ .Values.domain }}"]
