@@ -33,12 +33,13 @@ omniparser = Omniparser(config)
 
 class ParseRequest(BaseModel):
     base64_image: str
+    paragraph_enabled: bool = True  # Default to True to maintain backward compatibility
 
 @app.post("/parse/")
 async def parse(parse_request: ParseRequest):
     print('start parsing...')
     start = time.time()
-    dino_labled_img, parsed_content_list, image_size = omniparser.parse(parse_request.base64_image)
+    dino_labled_img, parsed_content_list, image_size = omniparser.parse(parse_request.base64_image, paragraph_enabled=parse_request.paragraph_enabled)
     latency = time.time() - start
     print('time:', latency)
     return {"som_image_base64": dino_labled_img, "parsed_content_list": parsed_content_list, 'latency': latency, 'image_size': image_size}
