@@ -4,8 +4,14 @@ output "domain_name" {
   description = "Domain name for the service"
 }
 
-output "host_name" {
-  value       = var.host_name
+output "host_name_cloud" {
+  value       = var.host_name_cloud
+  sensitive   = false
+  description = "Host name for the service"
+}
+
+output "host_name_hetzner" {
+  value       = var.host_name_hetzner
   sensitive   = false
   description = "Host name for the service"
 }
