@@ -8,11 +8,11 @@ import io
 
 
 import base64, os
-from util.utils import check_ocr_box, get_yolo_model, get_caption_model_processor, get_som_labeled_img
+from util.utils import check_ocr_box, get_detr_model, get_caption_model_processor, get_som_labeled_img
 import torch
 from PIL import Image
 
-yolo_model = get_yolo_model(model_path='weights/icon_detect/model.pt')
+detr_model = get_detr_model(model_path='weights/ui_detr/model.pth')
 caption_model_processor = get_caption_model_processor(model_name="florence2", model_name_or_path="weights/icon_caption_florence")
 # caption_model_processor = get_caption_model_processor(model_name="blip2", model_name_or_path="weights/icon_caption_blip2")
 
@@ -38,7 +38,6 @@ def process(
     box_threshold,
     iou_threshold,
     use_paddleocr,
-    imgsz
 ) -> Optional[Image.Image]:
 
     image_save_path = 'imgs/saved_image_demo.png'
@@ -51,17 +50,14 @@ def process(
         'text_padding': max(int(3 * box_overlay_ratio), 1),
         'thickness': max(int(3 * box_overlay_ratio), 1),
     }
-    # import pdb; pdb.set_trace()
 
     print("Start processing")
-    ocr_bbox_rslt, is_goal_filtered = check_ocr_box(image_save_path, display_img = False, output_bb_format='xyxy', goal_filtering=None, easyocr_args={'paragraph': True, 'text_threshold':0.8}, use_paddleocr=use_paddleocr)
+    ocr_bbox_rslt, is_goal_filtered = check_ocr_box(image_save_path, display_img=False, output_bb_format='xyxy', goal_filtering=None, easyocr_args={'paragraph': True, 'text_threshold': 0.8}, use_paddleocr=use_paddleocr)
     text, ocr_bbox = ocr_bbox_rslt
-    # print('prompt:', prompt)
-    dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image_save_path, yolo_model, BOX_TRESHOLD = box_threshold, output_coord_in_ratio=True, ocr_bbox=ocr_bbox,draw_bbox_config=draw_bbox_config, caption_model_processor=caption_model_processor, ocr_text=text,iou_threshold=iou_threshold, imgsz=imgsz,)  
+    dino_labled_img, label_coordinates, parsed_content_list = get_som_labeled_img(image_save_path, detr_model, BOX_TRESHOLD=box_threshold, output_coord_in_ratio=True, ocr_bbox=ocr_bbox, draw_bbox_config=draw_bbox_config, caption_model_processor=caption_model_processor, ocr_text=text, iou_threshold=iou_threshold)
     image = Image.open(io.BytesIO(base64.b64decode(dino_labled_img)))
     print('finish processing')
-    parsed_content_list = '\n'.join([f'icon {i}: ' + str(v) for i,v in enumerate(parsed_content_list)])
-    # parsed_content_list = str(parsed_content_list)
+    parsed_content_list = '\n'.join([f'icon {i}: ' + str(v) for i, v in enumerate(parsed_content_list)])
     return image, str(parsed_content_list)
 
 with gr.Blocks() as demo:
@@ -70,16 +66,14 @@ with gr.Blocks() as demo:
         with gr.Column():
             image_input_component = gr.Image(
                 type='pil', label='Upload image')
-            # set the threshold for removing the bounding boxes with low confidence, default is 0.05
+            # set the threshold for removing the bounding boxes with low confidence, default is 0.3
             box_threshold_component = gr.Slider(
-                label='Box Threshold', minimum=0.01, maximum=1.0, step=0.01, value=0.05)
+                label='Box Threshold', minimum=0.01, maximum=1.0, step=0.01, value=0.3)
             # set the threshold for removing the bounding boxes with large overlap, default is 0.1
             iou_threshold_component = gr.Slider(
                 label='IOU Threshold', minimum=0.01, maximum=1.0, step=0.01, value=0.1)
             use_paddleocr_component = gr.Checkbox(
                 label='Use PaddleOCR', value=True)
-            imgsz_component = gr.Slider(
-                label='Icon Detect Image Size', minimum=640, maximum=1920, step=32, value=640)
             submit_button_component = gr.Button(
                 value='Submit', variant='primary')
         with gr.Column():
@@ -93,7 +87,6 @@ with gr.Blocks() as demo:
             box_threshold_component,
             iou_threshold_component,
             use_paddleocr_component,
-            imgsz_component
         ],
         outputs=[image_output_component, text_output_component]
     )
