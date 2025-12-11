@@ -71,6 +71,7 @@ def get_caption_model_processor(model_name, model_name_or_path="Salesforce/blip2
 def get_detr_model(model_path, resolution=1600):
     from rfdetr.detr import RFDETRMedium
     model = RFDETRMedium(pretrain_weights=model_path, resolution=resolution)
+    model.optimize_for_inference()
     return model
 
 
