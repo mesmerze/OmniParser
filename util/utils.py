@@ -445,7 +445,10 @@ def get_som_labeled_img(image_source: Union[str, Image.Image], model=None, BOX_T
         # fill the filtered_boxes_elem None content with parsed_content_icon in order
         for i, box in enumerate(filtered_boxes_elem):
             if box['content'] is None:
-                box['content'] = parsed_content_icon.pop(0)
+                if parsed_content_icon:
+                    box['content'] = parsed_content_icon.pop(0)
+                else:
+                    box['content'] = 'icon'
         for i, txt in enumerate(parsed_content_icon):
             parsed_content_icon_ls.append(f"Icon Box ID {str(i+icon_start)}: {txt}")
         parsed_content_merged = ocr_text + parsed_content_icon_ls
