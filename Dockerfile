@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install libgl1 -y && apt-get clean && rm -rf /var/
     # Download UI-DETR model
     mkdir -p weights/ui_detr && \
     huggingface-cli download racineai/UI-DETR-1 model.pth --local-dir weights/ui_detr
-    
+
 COPY . .
 
 EXPOSE 8000
