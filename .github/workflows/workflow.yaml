@@ -1,0 +1,17 @@
+name: The workflow
+run-name: workflow-${{ github.ref_name }}-${{ github.run_number }}
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      manual_debug:
+        description: 'Stuck the workflow for debugging'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-and-push:
+    uses: test-IO/cicd/.github/workflows/docker_build.yaml@main
+    with:
+      image_name: eu.gcr.io/oi-tset/omniparser

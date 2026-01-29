@@ -1,3 +1,3 @@
-host: {{ exec "terraform" (list "-chdir=../../terraform" "output" "-raw" "host_name") | trim }}
+host: {{ exec "terraform" (list "-chdir=../../terraform" "output" "-raw" "host_name_cloud") | trim }}
 domain: {{ exec "terraform" (list "-chdir=../../terraform" "output" "-raw" "domain_name") | trim }}
 tlsSecretName: testio-tls-secret

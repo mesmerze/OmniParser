@@ -24,12 +24,17 @@ variable "domain_name" {
   description = "Domain name for the service"
 }
 
-variable "host_name" {
+variable "host_name_cloud" {
   type        = string
-  default     = "omniparser"
-  description = "Host name for the service"
+  default     = "omniparser-cloud"
+  description = "Host name for the service in GCP"
 }
 
+variable "host_name_hetzner" {
+  type        = string
+  default     = "omniparser"
+  description = "Host name for the service in Hetzner"
+}
 variable "ingress" {
   type        = string
   default     = "istio-external-static-ip"

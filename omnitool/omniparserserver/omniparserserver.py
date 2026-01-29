@@ -1,5 +1,5 @@
 '''
-python -m omniparserserver --som_model_path ../../weights/icon_detect/model.pt --caption_model_name florence2 --caption_model_path ../../weights/icon_caption_florence --device cuda --BOX_TRESHOLD 0.05
+python -m omniparserserver --som_model_path ../../weights/ui_detr/model.pth --caption_model_name florence2 --caption_model_path ../../weights/icon_caption_florence --device cpu --BOX_TRESHOLD 0.3
 '''
 
 import sys
@@ -15,7 +15,7 @@ from util.omniparser import Omniparser
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Omniparser API')
-    parser.add_argument('--som_model_path', type=str, default='../../weights/icon_detect/model.pt', help='Path to the som model')
+    parser.add_argument('--som_model_path', type=str, default='../../weights/ui_detr/model.pth', help='Path to the UI-DETR model')
     parser.add_argument('--caption_model_name', type=str, default='florence2', help='Name of the caption model')
     parser.add_argument('--caption_model_path', type=str, default='../../weights/icon_caption_florence', help='Path to the caption model')
     parser.add_argument('--device', type=str, default='cpu', help='Device to run the model')
@@ -33,12 +33,13 @@ omniparser = Omniparser(config)
 
 class ParseRequest(BaseModel):
     base64_image: str
+    paragraph_enabled: bool = True  # Default to True to maintain backward compatibility
 
 @app.post("/parse/")
 async def parse(parse_request: ParseRequest):
     print('start parsing...')
     start = time.time()
-    dino_labled_img, parsed_content_list, image_size = omniparser.parse(parse_request.base64_image)
+    dino_labled_img, parsed_content_list, image_size = omniparser.parse(parse_request.base64_image, paragraph_enabled=parse_request.paragraph_enabled)
     latency = time.time() - start
     print('time:', latency)
     return {"som_image_base64": dino_labled_img, "parsed_content_list": parsed_content_list, 'latency': latency, 'image_size': image_size}
