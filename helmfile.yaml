@@ -1,11 +1,11 @@
 # helmfile.yaml
 
-helmDefaults:  
+helmDefaults:
   timeout: 300
   wait: true
 
 bases:
-  - git::ssh://git@github.com/test-IO/helm.git@environments/environments.yaml?ref=master  
+  - git::ssh://git@github.com/test-IO/helm.git@environments/environments.yaml?ref=master
 
 templates:
   default:
@@ -13,14 +13,14 @@ templates:
     namespace: omniparser
     labels:
       name: '{{`{{ .Release.Name }}`}}'
-    values:      
+    values:
       - environments/{{ .Environment.Name }}/{{`{{ .Release.Name }}`}}.yaml.gotmpl
 
 releases:
-  - name: omniparser    
-    chart: ./charts/omniparser     
+  - name: omniparser
+    chart: ./charts/omniparser
     inherit:
-      - template: default  
+      - template: default
 
   - name: istio-service
     chart: ./charts/istio-service
@@ -30,4 +30,4 @@ releases:
     needs:
       - omniparser
     inherit:
-      - template: default     
+      - template: default

@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install libgl1 -y && apt-get clean && rm -rf /var/
     huggingface-cli download microsoft/OmniParser-v2.0 --local-dir weights --repo-type model --include "$folder/*"; \
     done && \
     mv weights/icon_caption weights/icon_caption_florence
-    
+
 COPY . .
 
 EXPOSE 8000
