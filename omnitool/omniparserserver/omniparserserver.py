@@ -10,7 +10,8 @@ import base64
 from typing import Optional
 
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import argparse
 import uvicorn
@@ -33,6 +34,7 @@ def parse_arguments():
     parser.add_argument('--grounding_model', type=str, default='microsoft/GUI-Actor-3B-Qwen2.5-VL', help='HuggingFace model ID for grounding')
     parser.add_argument('--verifier_model', type=str, default='microsoft/GUI-Actor-Verifier-2B', help='HuggingFace model ID for grounding verifier')
     parser.add_argument('--enable_verifier', action='store_true', help='Enable verifier for grounding (re-ranks candidates)')
+    parser.add_argument('--api_key', type=str, default=os.environ.get('OMNIPARSER_API_KEY', ''), help='API key for authentication (or set OMNIPARSER_API_KEY env var)')
     args, _ = parser.parse_known_args()
     return args
 
@@ -40,6 +42,16 @@ args = parse_arguments()
 config = vars(args)
 
 app = FastAPI()
+
+
+@app.middleware("http")
+async def check_api_key(request: Request, call_next):
+    if args.api_key and request.url.path != "/probe/":
+        key = request.headers.get("X-API-Key", "")
+        if key != args.api_key:
+            return JSONResponse(status_code=401, content={"error": "Invalid or missing API key"})
+    return await call_next(request)
+
 
 # OmniParser (lazy-loaded, may not have weights available)
 _omniparser = None
