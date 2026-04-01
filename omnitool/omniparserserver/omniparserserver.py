@@ -68,10 +68,12 @@ def get_grounding_model():
         dtype = torch.bfloat16 if device != 'cpu' else torch.float32
         print(f'Loading grounding model {args.grounding_model} on {device}...')
 
+        attn_impl = "flash_attention_2" if device == 'cuda' else None
         _grounding_model = Qwen2_5_VLForConditionalGenerationWithPointer.from_pretrained(
             args.grounding_model,
             torch_dtype=dtype,
             device_map=device,
+            attn_implementation=attn_impl,
         ).eval()
         _grounding_processor = AutoProcessor.from_pretrained(args.grounding_model)
         _grounding_tokenizer = _grounding_processor.tokenizer
@@ -93,11 +95,13 @@ def get_verifier_model():
         dtype = torch.bfloat16 if device != 'cpu' else torch.float32
         print(f'Loading verifier model {args.verifier_model} on {device}...')
 
+        attn_impl = "flash_attention_2" if device == 'cuda' else None
         _verifier_model = Qwen2VLForConditionalGeneration.from_pretrained(
             args.verifier_model,
             torch_dtype=dtype,
             device_map=device,
             trust_remote_code=True,
+            attn_implementation=attn_impl,
         ).eval()
         _verifier_processor = AutoProcessor.from_pretrained(args.verifier_model)
         _verifier_processor.tokenizer.pad_token = _verifier_processor.tokenizer.eos_token
