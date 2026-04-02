@@ -34,6 +34,7 @@ def parse_arguments():
     parser.add_argument('--grounding_model', type=str, default='microsoft/GUI-Actor-3B-Qwen2.5-VL', help='HuggingFace model ID for grounding')
     parser.add_argument('--verifier_model', type=str, default='microsoft/GUI-Actor-Verifier-2B', help='HuggingFace model ID for grounding verifier')
     parser.add_argument('--enable_verifier', action='store_true', help='Enable verifier for grounding (re-ranks candidates)')
+    parser.add_argument('--load_in_8bit', action='store_true', help='Load grounding model in 8-bit quantization (saves VRAM)')
     parser.add_argument('--api_key', type=str, default=os.environ.get('OMNIPARSER_API_KEY', ''), help='API key for authentication (or set OMNIPARSER_API_KEY env var)')
     args, _ = parser.parse_known_args()
     return args
@@ -78,12 +79,18 @@ def get_grounding_model():
 
         device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
         dtype = torch.bfloat16 if device != 'cpu' else torch.float32
-        print(f'Loading grounding model {args.grounding_model} on {device}...')
+        print(f'Loading grounding model {args.grounding_model} on {device}' + (' (8-bit)' if args.load_in_8bit else '') + '...')
+
+        load_kwargs = {"device_map": device}
+        if args.load_in_8bit and device == 'cuda':
+            from transformers import BitsAndBytesConfig
+            load_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+        else:
+            load_kwargs["torch_dtype"] = dtype
 
         _grounding_model = Qwen2_5_VLForConditionalGenerationWithPointer.from_pretrained(
             args.grounding_model,
-            torch_dtype=dtype,
-            device_map=device,
+            **load_kwargs,
         ).eval()
         _grounding_processor = AutoProcessor.from_pretrained(args.grounding_model)
         _grounding_tokenizer = _grounding_processor.tokenizer
