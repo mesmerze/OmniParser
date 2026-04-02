@@ -22,8 +22,7 @@ RUN apt-get update && apt-get install libgl1 git -y && apt-get clean && rm -rf /
     # Install GUI-Actor dependencies and download models
     pip install qwen-vl-utils==0.0.8 accelerate hf_transfer --no-cache-dir && \
     pip install "gui-actor @ git+https://github.com/microsoft/GUI-Actor.git" --no-deps --no-cache-dir && \
-    huggingface-cli download microsoft/GUI-Actor-3B-Qwen2.5-VL && \
-    huggingface-cli download microsoft/GUI-Actor-Verifier-2B
+    huggingface-cli download microsoft/GUI-Actor-7B-Qwen2.5-VL
 
 COPY . .
 
@@ -31,7 +30,7 @@ EXPOSE 8000
 
 WORKDIR omnitool/omniparserserver/
 
-CMD ["python", "-m", "omniparserserver", "--som_model_path", "../../weights/ui_detr/model.pth", "--caption_model_name", "florence2", "--caption_model_path", "../../weights/icon_caption_florence", "--device", "cuda", "--BOX_TRESHOLD", "0.3", "--enable_grounding", "--enable_verifier"]
+CMD ["python", "-m", "omniparserserver", "--som_model_path", "../../weights/ui_detr/model.pth", "--caption_model_name", "florence2", "--caption_model_path", "../../weights/icon_caption_florence", "--device", "cuda", "--BOX_TRESHOLD", "0.3", "--enable_grounding", "--grounding_model", "microsoft/GUI-Actor-7B-Qwen2.5-VL"]
 
 ENV PATH=${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
