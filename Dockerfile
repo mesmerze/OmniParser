@@ -19,10 +19,10 @@ RUN apt-get update && apt-get install libgl1 git -y && apt-get clean && rm -rf /
     # Download UI-DETR model
     mkdir -p weights/ui_detr && \
     huggingface-cli download racineai/UI-DETR-1 model.pth --local-dir weights/ui_detr && \
-    # Install GUI-Actor dependencies and download models
-    pip install qwen-vl-utils==0.0.8 accelerate hf_transfer --no-cache-dir && \
-    pip install "gui-actor @ git+https://github.com/microsoft/GUI-Actor.git" --no-deps --no-cache-dir && \
-    huggingface-cli download microsoft/GUI-Actor-7B-Qwen2.5-VL
+    # Install grounding download accelerator (hf_transfer) and pre-pull UI-TARS weights
+    # accelerate is already pinned in requirements.txt, so it's not re-installed here.
+    pip install hf_transfer --no-cache-dir && \
+    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download ByteDance-Seed/UI-TARS-1.5-7B
 
 COPY . .
 
@@ -30,7 +30,7 @@ EXPOSE 8000
 
 WORKDIR omnitool/omniparserserver/
 
-CMD ["python", "-m", "omniparserserver", "--som_model_path", "../../weights/ui_detr/model.pth", "--caption_model_name", "florence2", "--caption_model_path", "../../weights/icon_caption_florence", "--device", "cuda", "--BOX_TRESHOLD", "0.3", "--enable_grounding", "--grounding_model", "microsoft/GUI-Actor-7B-Qwen2.5-VL"]
+CMD ["python", "-m", "omniparserserver", "--som_model_path", "../../weights/ui_detr/model.pth", "--caption_model_name", "florence2", "--caption_model_path", "../../weights/icon_caption_florence", "--device", "cuda", "--BOX_TRESHOLD", "0.3", "--enable_grounding", "--grounding_model", "ByteDance-Seed/UI-TARS-1.5-7B"]
 
 ENV PATH=${PATH}:/usr/local/nvidia/bin:/usr/local/cuda/bin
 ENV LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/usr/local/nvidia/lib:/usr/local/nvidia/lib64

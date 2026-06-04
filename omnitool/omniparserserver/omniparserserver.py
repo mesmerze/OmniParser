@@ -5,6 +5,7 @@ python -m omniparserserver --som_model_path ../../weights/ui_detr/model.pth --ca
 import sys
 import os
 import io
+import re
 import time
 import base64
 from typing import Optional
@@ -30,10 +31,8 @@ def parse_arguments():
     parser.add_argument('--BOX_TRESHOLD', type=float, default=0.05, help='Threshold for box detection')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host for the API')
     parser.add_argument('--port', type=int, default=8000, help='Port for the API')
-    parser.add_argument('--enable_grounding', action='store_true', help='Enable GUI-Actor grounding endpoint')
-    parser.add_argument('--grounding_model', type=str, default='microsoft/GUI-Actor-3B-Qwen2.5-VL', help='HuggingFace model ID for grounding')
-    parser.add_argument('--verifier_model', type=str, default='microsoft/GUI-Actor-Verifier-2B', help='HuggingFace model ID for grounding verifier')
-    parser.add_argument('--enable_verifier', action='store_true', help='Enable verifier for grounding (re-ranks candidates)')
+    parser.add_argument('--enable_grounding', action='store_true', help='Enable UI-TARS grounding endpoint')
+    parser.add_argument('--grounding_model', type=str, default='ByteDance-Seed/UI-TARS-1.5-7B', help='HuggingFace model ID for grounding (UI-TARS or Qwen2.5-VL-Instruct variant)')
     parser.add_argument('--api_key', type=str, default=os.environ.get('OMNIPARSER_API_KEY', ''), help='API key for authentication (or set OMNIPARSER_API_KEY env var)')
     args, _ = parser.parse_known_args()
     return args
@@ -42,6 +41,14 @@ args = parse_arguments()
 config = vars(args)
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+async def warmup_grounding():
+    """Eagerly load the grounding model so the first /ground/ request doesn't
+    pay the ~60s model-load tax on a cold pod (and time out client-side)."""
+    if args.enable_grounding:
+        get_grounding_model()
 
 
 @app.middleware("http")
@@ -64,98 +71,95 @@ def get_omniparser():
     return _omniparser
 
 
-# GUI-Actor grounding model (lazy-loaded)
+# UI-TARS grounding model (lazy-loaded)
 _grounding_model = None
 _grounding_processor = None
-_grounding_tokenizer = None
 
 
 def get_grounding_model():
-    global _grounding_model, _grounding_processor, _grounding_tokenizer
+    global _grounding_model, _grounding_processor
     if _grounding_model is None:
-        from transformers import AutoProcessor
-        from gui_actor.modeling_qwen25vl import Qwen2_5_VLForConditionalGenerationWithPointer
+        from transformers import AutoProcessor, AutoModelForImageTextToText
 
         device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
         dtype = torch.bfloat16 if device != 'cpu' else torch.float32
         print(f'Loading grounding model {args.grounding_model} on {device}...')
 
-        _grounding_model = Qwen2_5_VLForConditionalGenerationWithPointer.from_pretrained(
+        _grounding_model = AutoModelForImageTextToText.from_pretrained(
             args.grounding_model,
             torch_dtype=dtype,
+            attn_implementation='sdpa',
             device_map=device,
         ).eval()
+        _grounding_model.config.use_cache = True
+        if hasattr(_grounding_model.config, 'text_config'):
+            _grounding_model.config.text_config.use_cache = True
         _grounding_processor = AutoProcessor.from_pretrained(args.grounding_model)
-        _grounding_tokenizer = _grounding_processor.tokenizer
         print('Grounding model loaded!')
-    return _grounding_model, _grounding_processor, _grounding_tokenizer
+    return _grounding_model, _grounding_processor
 
 
-# GUI-Actor Verifier model (lazy-loaded)
-_verifier_model = None
-_verifier_processor = None
+# Official UI-TARS GROUNDING prompt template
+# https://github.com/bytedance/UI-TARS/blob/main/codes/ui_tars/prompt.py
+GROUNDING_PROMPT = """You are a GUI agent. You are given a task and your action history, with screenshots. You need to perform the next action to complete the task.
+
+## Output Format
+
+Action: ...
 
 
-def get_verifier_model():
-    global _verifier_model, _verifier_processor
-    if _verifier_model is None:
-        from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+## Action Space
+click(point='<point>x1 y1</point>')
 
-        device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-        dtype = torch.bfloat16 if device != 'cpu' else torch.float32
-        print(f'Loading verifier model {args.verifier_model} on {device}...')
+## User Instruction
+{instruction}"""
 
-        _verifier_model = Qwen2VLForConditionalGeneration.from_pretrained(
-            args.verifier_model,
-            torch_dtype=dtype,
-            device_map=device,
-            trust_remote_code=True,
-        ).eval()
-        _verifier_processor = AutoProcessor.from_pretrained(args.verifier_model)
-        _verifier_processor.tokenizer.pad_token = _verifier_processor.tokenizer.eos_token
-        print('Verifier model loaded!')
-    return _verifier_model, _verifier_processor
+# Parse UI-TARS output. Returns dict with `point` and optional `bbox`, or None.
+# Native GROUNDING format from the official template: <point>x y</point>
+_POINT_TAG = re.compile(r"<point>\s*(\d+)\s+(\d+)\s*</point>", re.IGNORECASE)
+# COMPUTER_USE / agent-style with start_box / end_box bracketed coords
+_BBOX_ACTION = re.compile(r"start_box\s*=\s*['\"][\[\(]\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*[\]\)]")
+_POINT_ACTION = re.compile(r"start_box\s*=\s*['\"][\[\(]\s*(\d+)\s*,\s*(\d+)\s*[\]\)]")
+# Alternative SVG-ish <points x1="..." y1="..."> the model occasionally emits
+_POINTS_TAG = re.compile(
+    r'<points\b[^>]*?\bx1\s*=\s*"(\d+)"[^>]*?\by1\s*=\s*"(\d+)"'
+    r'(?:[^>]*?\bx2\s*=\s*"(\d+)")?(?:[^>]*?\by2\s*=\s*"(\d+)")?',
+    re.IGNORECASE,
+)
+# Bare fallbacks (no system prompt → model improvises)
+_BBOX_BARE = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)")
+_POINT_BARE = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)")
 
 
-def verify_point(model, processor, instruction, image, point_px, crop_size=500):
-    """Score a candidate point using the verifier. Returns P(True) / (P(True) + P(False))."""
-    from PIL import ImageDraw
-    import numpy as np
-    from qwen_vl_utils import process_vision_info
-
-    img = image.copy()
-    draw = ImageDraw.Draw(img)
-    w, h = img.size
-    size_factor = h / 1000 * 1.2
-    radius = int(np.ceil(7 * size_factor))
-    line_width = int(np.ceil(3 * size_factor))
-    x, y = int(point_px[0]), int(point_px[1])
-    draw.ellipse([x - radius, y - radius, x + radius, y + radius], outline='red', width=line_width)
-
-    # Crop around point
-    left = max(0, x - crop_size)
-    right = min(w - 1, x + crop_size)
-    top = max(0, y - crop_size)
-    bottom = min(h - 1, y + crop_size)
-    img = img.crop((left, top, right, bottom))
-
-    prompt = f"Please observe the screenshot and exame whether the hollow red circle accurately placed on the intended position in the image: '{instruction}'. Answer True or False."
-    messages = [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": prompt}]}]
-
-    text_input = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    image_inputs, _ = process_vision_info(messages)
-    inputs = processor(text=[text_input], images=image_inputs, padding=True, return_tensors="pt")
-    inputs = inputs.to(model.device)
-
-    with torch.no_grad():
-        logits = model(**inputs).logits[:, -1, :]
-
-    true_id = processor.tokenizer.encode("True", add_special_tokens=False)[0]
-    false_id = processor.tokenizer.encode("False", add_special_tokens=False)[0]
-    probs = torch.softmax(logits, dim=-1)
-    true_prob = probs[0, true_id].item()
-    false_prob = probs[0, false_id].item()
-    return true_prob / (true_prob + false_prob)
+def parse_uitars_output(text):
+    m = _POINT_TAG.search(text)
+    if m:
+        x, y = int(m.group(1)), int(m.group(2))
+        return {"point": (float(x), float(y)), "bbox": None}
+    m = _BBOX_ACTION.search(text)
+    if m:
+        x1, y1, x2, y2 = (int(v) for v in m.groups())
+        return {"point": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "bbox": (x1, y1, x2, y2)}
+    m = _POINT_ACTION.search(text)
+    if m:
+        x, y = (int(v) for v in m.groups())
+        return {"point": (float(x), float(y)), "bbox": None}
+    m = _POINTS_TAG.search(text)
+    if m:
+        x1, y1 = int(m.group(1)), int(m.group(2))
+        if m.group(3) and m.group(4):
+            x2, y2 = int(m.group(3)), int(m.group(4))
+            return {"point": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "bbox": (x1, y1, x2, y2)}
+        return {"point": (float(x1), float(y1)), "bbox": None}
+    m = _BBOX_BARE.search(text)
+    if m:
+        x1, y1, x2, y2 = (int(v) for v in m.groups())
+        return {"point": ((x1 + x2) / 2.0, (y1 + y2) / 2.0), "bbox": (x1, y1, x2, y2)}
+    m = _POINT_BARE.search(text)
+    if m:
+        x, y = (int(v) for v in m.groups())
+        return {"point": (float(x), float(y)), "bbox": None}
+    return None
 
 
 class ParseRequest(BaseModel):
@@ -165,8 +169,7 @@ class ParseRequest(BaseModel):
 class GroundRequest(BaseModel):
     base64_image: str
     instruction: str
-    topk: Optional[int] = 3
-    use_verifier: Optional[bool] = None  # None = use server default (--enable_verifier)
+    topk: Optional[int] = 1
 
 
 @app.post("/parse/")
@@ -182,19 +185,18 @@ async def parse(parse_request: ParseRequest):
 
 @app.post("/ground/")
 async def ground(request: GroundRequest):
-    """Find a specific UI element by description using GUI-Actor visual grounding.
+    """Find a UI element by description using UI-TARS visual grounding.
 
-    Returns normalized click coordinates [0,1] and image pixel dimensions.
-    When verifier is enabled, re-ranks candidates by verification score.
+    Returns click coordinates in both pixel and normalized [0,1] space.
+    For topk>1, the model is sampled with mild temperature; for topk=1
+    decoding is deterministic (greedy).
     """
     if not args.enable_grounding:
         return {"error": "Grounding not enabled. Start server with --enable_grounding"}
 
-    from gui_actor.inference import inference
-    from gui_actor.constants import grounding_system_message
-
     start = time.time()
-    model, processor, tokenizer = get_grounding_model()
+    model, processor = get_grounding_model()
+    topk = max(1, request.topk or 1)
 
     image_bytes = base64.b64decode(request.base64_image)
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -202,70 +204,68 @@ async def ground(request: GroundRequest):
 
     conversation = [
         {
-            "role": "system",
-            "content": [{"type": "text", "text": grounding_system_message}],
-        },
-        {
             "role": "user",
             "content": [
                 {"type": "image", "image": image},
-                {"type": "text", "text": request.instruction},
+                {"type": "text", "text": GROUNDING_PROMPT.format(instruction=request.instruction)},
             ],
         },
     ]
 
-    should_verify = request.use_verifier if request.use_verifier is not None else args.enable_verifier
+    inputs = processor.apply_chat_template(
+        conversation,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
+    ).to(model.device)
 
-    pred = inference(conversation, model, tokenizer, processor, use_placeholder=True, topk=request.topk)
-
-    topk_points = pred.get("topk_points", [])
-
-    # When verifier is active, re-derive candidates from raw attention scores
-    # for more diverse coverage (matches GUI-Actor repo's approach)
-    verified = False
-    if should_verify and pred.get("attn_scores") is not None:
-        from gui_actor.inference import get_prediction_region_point
-        import numpy as np
-
-        n_width = pred.get("n_width")
-        n_height = pred.get("n_height")
-        attn_scores = torch.tensor(pred["attn_scores"])
-
-        # Get all region centers from attention map (more diverse than topk alone)
-        _, all_centers, all_scores, _ = get_prediction_region_point(
-            attn_scores, n_width, n_height, top_n=20, return_all_regions=True, rect_center=False
-        )
-        candidate_points = [(pt[0] * w, pt[1] * h) for pt in all_centers]
-
-        verifier, verifier_proc = get_verifier_model()
-        scores = []
-        threshold = 0.8
-        for pt in candidate_points:
-            score = verify_point(verifier, verifier_proc, request.instruction, image, [pt[0], pt[1]])
-            scores.append(score)
-            if score >= threshold:
-                break  # Confident match, stop early
-
-        # Re-rank by verifier score
-        ranked = sorted(zip(candidate_points, all_centers[:len(scores)], scores), key=lambda x: x[2], reverse=True)
-        points_px = [{"x": r[0][0], "y": r[0][1], "x_norm": r[1][0], "y_norm": r[1][1]} for r in ranked[:request.topk]]
-        verifier_scores = [r[2] for r in ranked[:request.topk]]
-        verified = True
-        print(f'  verifier scores: {[f"{s:.3f}" for s in verifier_scores]}')
+    gen_kwargs = {
+        "max_new_tokens": 256,
+        "use_cache": True,
+        "pad_token_id": processor.tokenizer.pad_token_id or processor.tokenizer.eos_token_id,
+    }
+    if topk == 1:
+        gen_kwargs["do_sample"] = False
     else:
-        points_px = [{"x": pt[0] * w, "y": pt[1] * h, "x_norm": pt[0], "y_norm": pt[1]} for pt in topk_points[:request.topk]]
-        verifier_scores = None
+        gen_kwargs["do_sample"] = True
+        gen_kwargs["temperature"] = 0.7
+        gen_kwargs["num_return_sequences"] = topk
+
+    with torch.inference_mode():
+        out = model.generate(**inputs, **gen_kwargs)
+
+    prefix_len = inputs["input_ids"].shape[1]
+    points_px = []
+    raw_outputs = []
+    for seq in out:
+        text = processor.decode(seq[prefix_len:], skip_special_tokens=True)
+        raw_outputs.append(text)
+        parsed = parse_uitars_output(text)
+        if parsed is None:
+            continue
+        px, py = parsed["point"]
+        # Dedup near-identical candidates (within 8 px)
+        if any(abs(p["x"] - px) < 8 and abs(p["y"] - py) < 8 for p in points_px):
+            continue
+        points_px.append({
+            "x": px,
+            "y": py,
+            "x_norm": px / w if w else 0.0,
+            "y_norm": py / h if h else 0.0,
+            "bbox": list(parsed["bbox"]) if parsed["bbox"] is not None else None,
+        })
 
     latency = time.time() - start
-
     result = {
         "points": points_px,
-        "topk_values": pred.get("topk_values", [])[:request.topk] if not verified else verifier_scores,
+        "topk_values": [1.0] * len(points_px),  # UI-TARS does not expose calibrated confidence
         "image_size": [w, h],
         "latency": latency,
-        "verified": verified,
+        "verified": False,
+        "raw_outputs": raw_outputs,
     }
-    print(f'ground: "{request.instruction}" -> {len(points_px)} points, verified={verified}, {latency:.2f}s')
+    print(f'ground: "{request.instruction}" -> {len(points_px)} points, {latency:.2f}s')
     return result
 
 
